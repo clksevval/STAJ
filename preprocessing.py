@@ -34,7 +34,7 @@ def top_words(clean_reviews, top_n=10):
     for r in clean_reviews:
         words += re.findall(r"\b\w+\b", r["comment"].lower())
     stopwords = set([
-        "ve", "bir", "çok", "da", "de", "ile", "için", "ama", "bu", "ben", "olan", "gibi", "daha", "en",
+        "i", "a", "ve", "bir", "çok", "da", "de", "ile", "için", "ama", "bu", "ben", "olan", "gibi", "daha", "en",
         "biraz", "az", "o", "yok", "mi", "veya", "var"
     ])
     filtered_words = [word for word in words if word not in stopwords]
