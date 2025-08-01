@@ -73,9 +73,12 @@ class DatabaseService:
                 logging.info(f"Fetched {len(reviews)} pending reviews from the database.")
                 return reviews
 
+# workflow.py dosyasının içindeki bu fonksiyonu güncelleyin
+
     async def save_analysis_result(self, review_id: uuid.UUID, analysis_data: ReviewFields):
+        """LLM'den gelen analiz sonucunu 'review_analysis' tablosuna kaydeder."""
         if not self.pool:
-            raise ConnectionError("Database pool is not initialized.")
+            raise ConnectionError("Database pool is not initialized. Call connect() first.")
 
         query = """
             INSERT INTO review_analysis (review_id, sentiment, sentiment_confidence, pros, 
@@ -86,10 +89,17 @@ class DatabaseService:
         async with self.pool.connection() as aconn:
             async with aconn.cursor() as acur:
                 try:
+                    # <--- DÜZELTME: Listeleri json.dumps() ile JSON string'ine çeviriyoruz --->
                     await acur.execute(query, (
-                        review_id, data['sentiment'], data['sentiment_confidence'],
-                        data['pros'], data['cons'], data['complaints'],
-                        data['suggestions'], data['expectations'], data['feature_categories']
+                        review_id,
+                        data['sentiment'],
+                        data['sentiment_confidence'],
+                        json.dumps(data['pros']),
+                        json.dumps(data['cons']),
+                        json.dumps(data['complaints']),
+                        json.dumps(data['suggestions']),
+                        json.dumps(data['expectations']),
+                        json.dumps(data['feature_categories'])
                     ))
                     logging.info(f"Saved analysis for review_id: {review_id}")
                 except Exception as e:
