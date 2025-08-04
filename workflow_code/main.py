@@ -23,8 +23,8 @@ FEATURE_CATEGORIES = [
 ]
 
 # --------------------------------------------------------------------------
-# GÜNCELLENMİŞ BÖLÜM: Veritabanı Şemasıyla Uyumlu Pydantic Modeli
-# Bu model, 'review_analysis' tablosunun yapısıyla birebir eşleşir.
+# Veritabanı Şemasıyla Uyumlu Pydantic Modeli
+# 'review_analysis' tablosunun yapısında
 # --------------------------------------------------------------------------
 class ReviewFields(BaseModel):
     """LLM'den dönecek yapılandırılmış veriyi tanımlar."""
@@ -62,13 +62,10 @@ class ReviewFields(BaseModel):
     )
 
 
-# --------------------------------------------------------------------------
-# GÜNCELLENMİŞ BÖLÜM: Prompt, 'sentiment_confidence' istemek üzere güncellendi.
-# --------------------------------------------------------------------------
+
 PROMPT_TEMPLATE = """\
 Analyse the customer review below and output one standalone JSON object.
-Provide a sentiment confidence score between 0.0 and 1.0 for the sentiment prediction.
-For "feature_categories", choose ONLY from the predefined list.
+For \"feature_categories\", choose ONLY from the predefined list.
 
 Predefined Feature List: {feature_list}
 
@@ -85,25 +82,24 @@ class LLMService:
     """
     def __init__(self):
         """LangChain bileşenlerini ve LLM bağlantısını başlatır."""
-        # Ayarların app/core/config.py dosyasından geldiğini varsayıyoruz.
         from app.core.config import settings
-        
+
         self.llm = ChatOllama(
             base_url=settings.OLLAMA_BASE_URL,
             model=settings.LLM_MODEL,
             temperature=0,
-            format="json"  # Modeli JSON çıktısı vermeye zorlar
+            format="json"
         )
-        
+
         self.prompt = ChatPromptTemplate.from_template(
             PROMPT_TEMPLATE
         ).partial(feature_list=", ".join(FEATURE_CATEGORIES))
-        
-        # Zincir, tek bir 'ReviewFields' nesnesi döndürecek şekilde ayarlandı.
+
+        # tek bir 'ReviewFields' nesnesi döndürüyor
         self.chain = self.prompt | self.llm.with_structured_output(ReviewFields)
-        
+
         logger.info(f"LLMService initialized with model: {settings.LLM_MODEL}")
-    
+
     def analyse_review(self, review_text: str) -> ReviewFields | None:
         """
         Tek bir yorum metnini analiz eder ve yapılandırılmış bir ReviewFields nesnesi döndürür.
@@ -117,24 +113,21 @@ class LLMService:
             return None
 
 
-# --------------------------------------------------------------------------
-# Bu dosyanın tek başına test edilmesini sağlayan bölüm.
-# `python main.py` komutuyla çalıştırıldığında bu blok çalışır.
-# --------------------------------------------------------------------------
+# Bu dosyanın tek başına test edilmesi için
 if __name__ == "__main__":
     import json
 
     print("--- LLMService Standalone Test ---")
-    
+
     # Test için LLM servisini başlat
     llm_service = LLMService()
-    
+
     # Test edilecek örnek bir yorum
     sample_review = "The chair is comfortable and looks great, but it started to squeak after a week. The price was reasonable though. I'd suggest applying some WD-40 upon assembly."
-    
+
     # Yorumu analiz et
     analysis_result = llm_service.analyse_review(sample_review)
-    
+
     # Sonucu ekrana yazdır
     if analysis_result:
         print("\n--- Analysis Result ---")
