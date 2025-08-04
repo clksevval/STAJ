@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Bu liste, LLM'in seçim yapabileceği kategorileri tanımlar ve sabittir.
+# Yorumda geçen ürün özelliklerini sınırlı bir listeden seçmek için sabit liste
 FEATURE_CATEGORIES = [
     "ease of use", "material quality", "pricing", "durability",
     "delivery speed", "packaging quality", "design aesthetics",
@@ -22,20 +22,15 @@ FEATURE_CATEGORIES = [
     "technical support", "brand trust", "stock issue"
 ]
 
-# --------------------------------------------------------------------------
 # Veritabanı Şemasıyla Uyumlu Pydantic Modeli
 # 'review_analysis' tablosunun yapısında
-# --------------------------------------------------------------------------
 class ReviewFields(BaseModel):
     """LLM'den dönecek yapılandırılmış veriyi tanımlar."""
     sentiment: str = Field(
         ...,
         description="Genel ton: positive, negative, or neutral"
     )
-    sentiment_confidence: float = Field(
-        ...,
-        description="Duygu analizi tahmini için 0.0 ile 1.0 arasında bir güven skoru"
-    )
+
     pros: List[str] = Field(
         ...,
         description="Olumlu yönler (her etiket en fazla 5 kelime)"
@@ -64,56 +59,83 @@ class ReviewFields(BaseModel):
 
 
 PROMPT_TEMPLATE = """\
-Analyse the customer review below and output one standalone JSON object.
-For \"feature_categories\", choose ONLY from the predefined list.
+Analyse the customer review below and output a VALID JSON object.
+
+For "feature_categories", choose ONLY from the predefined list.
 
 Predefined Feature List: {feature_list}
 
 Customer Review:
->>>
+>>>>
 {review}
->>>
+>>>>
+
+IMPORTANT: You must respond with a VALID JSON object in exactly this format:
+{{
+  "sentiment": "positive|negative|neutral",
+  "pros": ["item1", "item2"],
+  "cons": ["item1", "item2"],
+  "complaints": ["item1", "item2"],
+  "suggestions": ["item1", "item2"],
+  "expectations": ["item1", "item2"],
+  "feature_categories": ["category1", "category2"]
+}}
+
+Do not include any text before or after the JSON object. Only return the JSON.
 """
 
 
+# LLM ile yorum analizi yapan servis
 class LLMService:
-    """
-    LLM ile etkileşimi yöneten ve yorumları analiz eden servis.
-    """
     def __init__(self):
-        """LangChain bileşenlerini ve LLM bağlantısını başlatır."""
+        # Config dosyasından ayarları çekiyoruz
         from app.core.config import settings
 
+        # Ollama üzerinden model bağlantısı kuruluyor
         self.llm = ChatOllama(
-            base_url=settings.OLLAMA_BASE_URL,
-            model=settings.LLM_MODEL,
-            temperature=0,
-            format="json"
+            base_url=settings.OLLAMA_BASE_URL,  # örn. http://localhost:11434
+            model=settings.LLM_MODEL,           # örn. qwen3:14b
+            temperature=0.7,                      # deterministik çıktı için
+            format="json"                       # burası sanırım sorun çıkarıyor
         )
 
+        # Prompt sabiti, özellik listesiyle birlikte kullanıma hazırlanıyor
         self.prompt = ChatPromptTemplate.from_template(
             PROMPT_TEMPLATE
         ).partial(feature_list=", ".join(FEATURE_CATEGORIES))
 
-        # tek bir 'ReviewFields' nesnesi döndürüyor
+        # LangChain zinciri tanımlanıyor: prompt → LLM → yapılandırılmış çıktı
         self.chain = self.prompt | self.llm.with_structured_output(ReviewFields)
 
         logger.info(f"LLMService initialized with model: {settings.LLM_MODEL}")
 
     def analyse_review(self, review_text: str) -> ReviewFields | None:
         """
-        Tek bir yorum metnini analiz eder ve yapılandırılmış bir ReviewFields nesnesi döndürür.
-        Hata durumunda None döndürür.
+        Verilen bir müşteri yorumunu analiz eder.
+        Başarılıysa `ReviewFields` nesnesi döner, hata olursa `None`.
         """
         try:
             logger.info(f"Analyzing review: '{review_text[:60]}...'")
-            return self.chain.invoke({"review": review_text})
+            
+            # Prompt'u hazırla
+            prompt_messages = self.prompt.format_messages(review=review_text)
+            logger.info(f"DEBUG - Prompt messages: {prompt_messages}")
+            
+            # LLM'den ham yanıtı al
+            raw_response = self.llm.invoke(prompt_messages)
+            logger.info(f"DEBUG - Raw LLM response: {raw_response}")
+            
+            # Structured output ile parse et
+            result = self.chain.invoke({"review": review_text})
+            logger.info(f"DEBUG - Parsed result: {result}")
+            
+            return result
         except Exception as e:
             logger.error(f"LLM analysis failed for review: '{review_text[:60]}...'. Error: {e}")
             return None
 
 
-# Bu dosyanın tek başına test edilmesi için
+# Test
 if __name__ == "__main__":
     import json
 
